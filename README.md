@@ -8,9 +8,9 @@
     howe we do
 
    
+  
 
-
-Qn:-i when i craete acount and login firts time my main branch
+Qn:-i when i craete acount and login firts time my main branch  
 are bydefault automatically created first time
 
     nOw in terminal after cloning
