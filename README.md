@@ -337,3 +337,107 @@ module.exports = {
   getWinRate,
   getRestartTime
 };
+
+SOCKET.JS
+
+   // join gamea
+      socket.on('join_lobby', async (message) => {
+        console.log("message1",message)
+
+        try {
+          const parsed = JSON.parse(message);
+          const lobbyId = parsed.data?.lobbyId;
+          const userId = parsed.data?.userId;
+          
+
+          if (!lobbyId || !userId) {
+            socket.emit('join_lobby_error', {
+              success: false, 
+              message: 'Invalid input id',  
+            });
+            return; 
+          }
+          
+          // Leave previous rooms before joining a new one
+          const rooms = Array.from(socket.rooms);   
+          rooms.forEach((room) => {
+            if (room !== socket.id) {
+              socket.leave(room);
+            }
+          });
+          
+          lobbyMap.set(socket.id, {
+            userId,
+            lobbyId,
+          });
+
+          // Join lobby room
+          socket.join(lobbyId);
+
+          // Log rooms after joining
+          // console.log("Rooms after join:", Array.from(socket.rooms));
+          // console.log( 
+          //   "All active rooms:",
+          //   Array.from(io.sockets.adapter.rooms.keys())
+          // );
+
+          io.to(lobbyId).emit('add_in_lobby', {
+            message: 'You join the lobby',
+          });
+
+          // Call joinLobby function
+          await joinLobby(socket, lobbyId, userId);
+
+          // Emit success message 
+          // socket.emit("join_lobby_success", {
+          //   success: true,
+          //   lobbyId,
+          //   message: "Successfully joined the lobby",
+          // });
+        } catch (error) {
+          console.error('Error in join_lobby:', error);
+          socket.emit('join_lobby_error', {
+            success: false,
+            message: 'Failed to join lobby',
+          });
+        }
+        console.log("message1", message);
+      });
+       // game start here
+   
+       socket.on(
+        'start_game_request',
+        async ({ lobbyId, success, message, gameLobbies }) => {
+          const lobbyIdStr = lobbyId.toString();
+          io.to(lobbyIdStr).emit('on_start_game', {   
+            success,
+            lobbyId: lobbyIdStr,
+            message,
+            data: gameLobbies, // Provide actual game data here
+            channelId: gameLobbies?.channel_id,
+          });
+
+
+          const lobby = await lobbyModel.getLobbyById(Number(lobbyIdStr));
+          if (!lobby) {
+            console.error(`Lobby ${lobbyId} not found`);
+            return;
+          }
+
+          console.log( `Lobby ${lobbyId} found:`, lobby);
+
+
+          // Start the game logic based on the lobby  id=13 of andar bahar gema
+           if (lobby?.game_id == 13) {
+            await handleAndarBaharStart(lobby?.id, io);
+          }
+
+        }
+      );
+
+      // in -out
+      // handleAndarBaharLogic(socket, io)
+       
+      // socket.on('on_send_bet_data', ({ userId, lobbyId, gameType, data }) => {
+        handleAndarBaharLogic(socket, io, { userId, lobbyId, gameType, data });
+      // });
