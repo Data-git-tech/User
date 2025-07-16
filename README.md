@@ -477,3 +477,164 @@ Json format
     
 
 
+ const userModel = require('../models/userModel')
+const lobbyModel = require('../models/lobbyModel');
+const getRestartTime1=require('../utils/in-outRules')
+// const { createDeck, shuffle, getRestartTime } = require('../utils/andarBaharGame');
+const { createDeck, shuffle, getWinRate } = require('../utils/in-outRules');
+
+const activeGames = new Map(); // track decks and middle cards by lobbyId
+ 
+const handleAndarBaharStart = async (lobbyId, io) => {
+    console.log("DATA",lobbyId)
+    try {
+ 
+        const lobby = await lobbyModel.getLobbyById(Number(lobbyId));
+        if (!lobby) return;
+ 
+        const deck = createDeck();
+        shuffle(deck);
+        const middleCard = deck.pop();
+ 
+        activeGames.set(String(lobbyId), {
+            deck,
+            middleCard,
+            bets: {},
+        });
+ 
+        io.to(String(lobbyId)).emit('on_betting_round_started', {
+           
+            betTimer: lobby.betTimer || 20,
+            message:"hello"
+        });
+ 
+        
+        setTimeout(() => {
+            io.to(String(lobbyId)).emit('on_betting_round_ended', {
+                betTimer:"ended bet time "
+            });
+        }, (lobby.betTimer || 20) * 1000);
+    } catch (error) {
+        console.error('Error in startBettingRoundForAndarBahar:', error);
+    }
+};
+ 
+const handleAndarBaharLogic = async (socket, io, { userId, lobbyId, gameType,    data}) => {
+    //   console.log("UserID",userId);
+    //   console.log(data,"data")
+    //   console.log("data andar-bahar",data.betOfAndar,data)
+      
+    //   console.log("userId",userId)
+    //   console.log("lobbyId".lobbyId)
+      
+    try {
+        const userIdNum = Number(userId);
+        const lobbyIdStr = String(lobbyId);
+        const betOfAndar = isNaN(Number(data?.betOfAndar)) ? 0 : Number(data.betOfAndar);
+        const betOfBahar = isNaN(Number(data?.betOfBahar)) ? 0 : Number(data.betOfBahar);
+        const totalBet = betOfAndar + betOfBahar;
+ 
+        const gameState = activeGames.get(lobbyIdStr);
+        if (!gameState) {
+            return socket.emit('on_bet_fail', { message: "Game state not found." });
+        }
+ 
+        const user = await userModel.getUserById(userIdNum);
+        if (!user || user.chips < totalBet) {
+            return socket.emit('on_bet_fail', { message: "Insufficient chips." });
+        }
+ 
+        // Deduct chips
+        await userModel.removeChipsFromUser(userIdNum, totalBet);
+ 
+        gameState.bets[userId] = {
+            betOfAndar,
+            betOfBahar
+        };
+ 
+        // Simulate game
+        const { deck, middleCard } = gameState;
+        const cards = [];
+        let matchCard = null;
+        let matchIndex = -1;
+        let winType = null;
+ 
+        const reverseRankMap = {
+            0: '2', 1: '3', 2: '4', 3: '5', 4: '6', 5: '7', 6: '8',
+            7: '9', 8: '10', 9: 'J', 10: 'Q', 11: 'K', 12: 'A'
+        };
+        const suitMap = { 'Clubs': 0, 'Diamonds': 1, 'Hearts': 2, 'Spades': 3 };
+        const rankMap = { '2': 0, '3': 1, '4': 2, '5': 3, '6': 4, '7': 5, '8': 6, '9': 7, '10': 8, 'J': 9, 'Q': 10, 'K': 11, 'A': 12 };
+        const normalizeRank = (rank) => typeof rank === 'number' ? rankMap[String(rank)] : rankMap[rank];
+ 
+        while (deck.length > 0) {
+            const card = deck.pop();
+            const suitIndex = suitMap[card.suit];
+            const rankIndex = normalizeRank(card.rank);
+            const cardId = suitIndex * 13 + rankIndex;
+            cards.push(cardId);
+ 
+            if (card.rank === middleCard.rank) {
+                matchCard = card.rank;
+                matchIndex = cards.length;
+                winType = (matchIndex % 2 === 0) ? 0 : 1; // 0 = Andar, 1 = Bahar
+                break;
+            }
+        }
+ 
+        let chipsWin = 0;
+        let chipsLose = 0;
+ 
+        if ((winType === 0 && betOfAndar > 0) || (winType === 1 && betOfBahar > 0)) {
+            chipsWin += (winType === 0 ? betOfAndar : betOfBahar) * 2;
+        } else {
+            chipsLose += totalBet;
+        }
+ 
+        if (chipsWin > 0) {
+            await userModel.addChipsToUser(userIdNum, chipsWin);
+        }
+ 
+        const matchRank = reverseRankMap[Number(matchCard)]; // convert 9 → 'J'
+ 
+        const revealedCards = cards.filter(cardId => {
+          const rankIndex = cardId % 13;
+          const rank = reverseRankMap[rankIndex];
+          return rank !== matchRank; // now both are strings
+        });
+ 
+            socket.emit('on_game_finish', {
+                message: chipsWin > 0 ? `You win ${chipsWin} chips.` : `You lose ${chipsLose} chips.`,
+                showCardDelay: 1.5,
+                matchCard,
+                cards: revealedCards,
+                winType,
+                result: winType === 0 ? 'Andar' : 'Bahar',
+                chipsWin,
+                chipsLose,
+                chipsBet: totalBet,
+            });
+        
+ 
+        const lobby = await lobbyModel.getLobbyById(Number(lobbyId));
+        const totalCardsCount = 1 + cards.length;
+        const gameRestartTimer =getRestartTime1.getRestartTime(1.5, totalCardsCount, lobby?.duration || 5);
+ 
+        if (lobby) {
+            setTimeout(() => {
+                handleAndarBaharStart(lobbyId, io);
+            }, gameRestartTimer * 1000);
+        }
+ 
+    } catch (error) {
+        console.error('Error in handleAndarBaharLogic:', error);
+        socket.emit('on_bet_fail', { message: error.message });
+    }
+};
+
+
+module.exports = {
+    handleAndarBaharStart,
+    handleAndarBaharLogic,
+};
+
