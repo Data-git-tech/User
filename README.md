@@ -441,3 +441,39 @@ SOCKET.JS
       // socket.on('on_send_bet_data', ({ userId, lobbyId, gameType, data }) => {
         handleAndarBaharLogic(socket, io, { userId, lobbyId, gameType, data });
       // });
+
+SOCKET .IO()
+Json format 
+
+
+ socket.on('on_send_bet_data', (message) => {
+      try {
+        // Step 1: Parse the incoming string message
+        const parsedMessage = JSON.parse(message);
+    
+        // Step 2: Extract the actual data payload
+        const { data } = parsedMessage;
+    
+        // Step 3: Destructure required fields from data
+        const { userId, lobbyId, gameType, betOfAndar, betOfBahar } = data;
+    
+        // Step 4: Log to verify
+        console.log("andar", betOfAndar);
+        console.log("bahar", betOfBahar);
+        console.log("usrID", userId);
+    
+        // Step 5: Pass it to your game logic
+        handleAndarBaharLogic(socket, io, {
+          userId,
+          lobbyId,
+          gameType,
+          data: { betOfAndar, betOfBahar }
+        });
+    
+      } catch (err) {
+        console.error("❌ Failed to parse bet data:", err);
+      }
+    });
+    
+
+
